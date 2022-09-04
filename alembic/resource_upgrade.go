@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -44,6 +46,11 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 				Description: "The resulting revision after applying the upgrade.",
 				Computed:    true,
 			},
+			"proxy_command": {
+				Type:        types.ListType{ElemType: types.StringType},
+				Description: "An argument list used to execute a proxy which allows direct communication with the database (e.g. cloud-sql-proxy)",
+				Optional:    true,
+			},
 		},
 	}, nil
 }
@@ -64,6 +71,7 @@ type resourceUpgradeData struct {
 	Environment      types.Map    `tfsdk:"environment"`
 	Alembic          types.List   `tfsdk:"alembic"`
 	UpgradedRevision types.String `tfsdk:"upgraded_revision"`
+	ProxyCommand     types.List   `tfsdk:"proxy_command"`
 }
 
 // Create a new resource
@@ -77,6 +85,13 @@ func (r resourceUpgrade) Create(ctx context.Context, req tfsdk.CreateResourceReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	proxy, diags := r.executeProxyCommand(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer proxy.Process.Kill()
 
 	diags = r.doCreateOrUpgrade(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
@@ -105,6 +120,13 @@ func (r resourceUpgrade) Read(ctx context.Context, req tfsdk.ReadResourceRequest
 		return
 	}
 
+	proxy, diags := r.executeProxyCommand(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer proxy.Process.Kill()
+
 	// Run the "alembic current" command to get the current head
 	proc, diags := r.buildAlembicCommand(ctx, plan, "current")
 	resp.Diagnostics.Append(diags...)
@@ -121,12 +143,16 @@ func (r resourceUpgrade) Read(ctx context.Context, req tfsdk.ReadResourceRequest
 
 	err := proc.Run()
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("alembic current failed: %v", err), stderr.String())
+		resp.Diagnostics.AddError(
+			fmt.Sprintf("alembic current failed: %v", err),
+			fmt.Sprintf("Standard Output:\n%v\n\nStandard Error:\n%v\n\n", stdout.String(), stderr.String()),
+		)
 		return
 	}
 
 	// Store the resulting revision ID
 	plan.UpgradedRevision.Value = strings.Trim(stdout.String(), "\n\r")
+	plan.UpgradedRevision.Unknown = false
 
 	// Store our updated resourceUpgradeData in the state
 	diags = resp.State.Set(ctx, &plan)
@@ -145,6 +171,13 @@ func (r resourceUpgrade) Update(ctx context.Context, req tfsdk.UpdateResourceReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	proxy, diags := r.executeProxyCommand(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer proxy.Process.Kill()
 
 	diags = r.doCreateOrUpgrade(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
@@ -187,12 +220,16 @@ func (r resourceUpgrade) doCreateOrUpgrade(ctx context.Context, plan *resourceUp
 	}
 
 	// Capture standard error output
+	proc.Stdout = &stdout
 	proc.Stderr = &stderr
 
 	// Execute alembic
 	err := proc.Run()
 	if err != nil {
-		result.AddError(fmt.Sprintf("alembic upgrade failed: %v", err), stderr.String())
+		result.AddError(
+			fmt.Sprintf("alembic upgrade failed: %v", err),
+			fmt.Sprintf("Standard Output:\n%v\n\nStandard Error:\n%v\n\n", stdout.String(), stderr.String()),
+		)
 		return result
 	}
 
@@ -204,6 +241,7 @@ func (r resourceUpgrade) doCreateOrUpgrade(ctx context.Context, plan *resourceUp
 	}
 
 	// Reset the stderr output in case alembic wrote to it previously
+	stdout.Reset()
 	stderr.Reset()
 
 	// Store standard output which has our new revision
@@ -212,12 +250,16 @@ func (r resourceUpgrade) doCreateOrUpgrade(ctx context.Context, plan *resourceUp
 
 	err = proc.Run()
 	if err != nil {
-		result.AddError(fmt.Sprintf("alembic current failed: %v", err), stderr.String())
+		result.AddError(
+			fmt.Sprintf("alembic current failed: %v", err),
+			fmt.Sprintf("Standard Output:\n%v\n\nStandard Error:\n%v\n\n", stdout.String(), stderr.String()),
+		)
 		return result
 	}
 
 	// Store the resulting revision ID
 	plan.UpgradedRevision.Value = strings.Trim(stdout.String(), "\n\r")
+	plan.UpgradedRevision.Unknown = false
 
 	return result
 }
@@ -228,15 +270,17 @@ func (r resourceUpgrade) buildAlembicCommand(ctx context.Context, plan resourceU
 	var diags diag.Diagnostics
 
 	if !plan.Alembic.Null {
-		// Use the alembic command specified in the resource
-		alembic = make([]string, len(plan.Alembic.Elems))
-		for i, v := range plan.Alembic.Elems {
-			alembic[i] = v.String()
+		diags.Append(plan.Alembic.ElementsAs(ctx, &alembic, false)...)
+		if diags.HasError() {
+			return nil, diags
 		}
 	} else {
 		// Default to the provider alembic command
 		alembic = r.p.alembic
 	}
+
+	// Add our specific alembic sub-command
+	alembic = append(alembic, command)
 
 	if command == "upgrade" || command == "downgrade" {
 		// Add the plan argument
@@ -249,14 +293,17 @@ func (r resourceUpgrade) buildAlembicCommand(ctx context.Context, plan resourceU
 	}
 
 	// Build the command instance
-	proc := exec.Command(alembic[0], alembic...)
+	proc := exec.Command(alembic[0], alembic[1:]...)
 
-	// Add environment
+	// We should only need the PATH variable to locate binaries
+	proc.Env = []string{fmt.Sprintf("PATH=%v", os.Getenv("PATH"))}
+
+	// Add custom environment
 	if !plan.Environment.Null {
 		var environment map[string]string
 
 		// Retrieve the parsed environment mapping
-		diags.Append(plan.Environment.ElementsAs(ctx, environment, false)...)
+		diags.Append(plan.Environment.ElementsAs(ctx, &environment, false)...)
 		if diags.HasError() {
 			return nil, diags
 		}
@@ -269,6 +316,40 @@ func (r resourceUpgrade) buildAlembicCommand(ctx context.Context, plan resourceU
 
 	// Ensure the process runs from the project root directory
 	proc.Dir = r.p.project_root
+
+	return proc, diags
+}
+
+func (r resourceUpgrade) executeProxyCommand(ctx context.Context, plan resourceUpgradeData) (*exec.Cmd, diag.Diagnostics) {
+
+	var diags diag.Diagnostics
+	var args []string
+
+	// This is fine, we don't need a proxy command
+	if plan.ProxyCommand.Null {
+		return nil, diags
+	}
+
+	diags.Append(plan.ProxyCommand.ElementsAs(ctx, &args, false)...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	proc := exec.CommandContext(ctx, args[0], args[1:]...)
+
+	// No stdio for the proxy
+	proc.Stdin = nil
+	proc.Stderr = nil
+	proc.Stdout = nil
+
+	err := proc.Start()
+	if err != nil {
+		diags.AddError(fmt.Sprintf("failed to start sql proxy: %v", args), err.Error())
+		return nil, diags
+	}
+
+	// Wait a bit for the proxy to come alive
+	time.Sleep(time.Second * 5)
 
 	return proc, diags
 }

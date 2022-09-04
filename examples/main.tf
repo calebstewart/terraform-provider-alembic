@@ -13,4 +13,8 @@ resource "alembic_upgrade" "db-upgrade" {
   environment = {
     DATABASE_URL = locals.database_connection_string
   }
+
+  // If you need a proxy like cloudsql or an SSH port forward for connecting,
+  // you can do that here.
+  // proxy_command = ["cloud_sql_proxy", "-instances=..."]
 }

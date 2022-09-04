@@ -29,14 +29,12 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 			"project_root": {
 				Type:        types.StringType,
 				Description: "Path to the project root directory where your alembic configuration is stored.",
-				Optional:    false,
-				Computed:    true,
+				Required:    true,
 			},
 			"alembic": {
 				Type:        types.ListType{ElemType: types.StringType},
 				Description: "An argument list which is used as the Alembic command line (default: ['alembic'])",
 				Optional:    true,
-				Computed:    true,
 			},
 		},
 	}, nil
@@ -74,10 +72,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	// Optionally configurea custom alembic command
 	if !config.Alembic.Unknown && !config.Alembic.Null {
-		p.alembic = make([]string, len(config.Alembic.Elems))
-		for idx, v := range config.Alembic.Elems {
-			p.alembic[idx] = v.String()
-		}
+		config.Alembic.ElementsAs(ctx, &p.alembic, false)
 	} else {
 		p.alembic = []string{"alembic"}
 	}
