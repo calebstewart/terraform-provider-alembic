@@ -36,6 +36,7 @@ resource "alembic_upgrade" "db-upgrade" {
 - `environment` - (Map[String, String], Optional, *Sensitive*) Environment variables to set when invoking Alembic.
 - `alembic` - (List[String], Optional) The command used to invoke Alembic (default: provider configuration).
 - `proxy_command` - (List[String], Optional) A command which is executed for the lifetime of database interactions used to proxy connections for protected instances (e.g. [Cloud SQL Proxy](https://cloud.google.com/sql/docs/mysql/sql-proxy)).
+- `proxy_sleep` - (String, Optional) A time duration in the format '[0-9]+(s|m|h|d|M|Y)' for how long to sleep after starting the proxy.
 - `extra` - (Map[String]String, Optional) Additional arguments consuemd by custom `env.py` scripts
 
 ## Attributes Reference

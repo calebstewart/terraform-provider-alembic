@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,9 +15,35 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func executeProxyCommand(ctx context.Context, proxy_command types.List) (*exec.Cmd, diag.Diagnostics) {
+var durationRegex = regexp.MustCompile(`P([\d\.]+Y)?([\d\.]+M)?([\d\.]+D)?T?([\d\.]+H)?([\d\.]+M)?([\d\.]+?S)?`)
+
+// ParseDuration converts a ISO8601 duration into a time.Duration
+func parseDuration(str string) time.Duration {
+	matches := durationRegex.FindStringSubmatch(str)
+
+	years := parseDurationPart(matches[1], time.Hour*24*365)
+	months := parseDurationPart(matches[2], time.Hour*24*30)
+	days := parseDurationPart(matches[3], time.Hour*24)
+	hours := parseDurationPart(matches[4], time.Hour)
+	minutes := parseDurationPart(matches[5], time.Second*60)
+	seconds := parseDurationPart(matches[6], time.Second)
+
+	return time.Duration(years + months + days + hours + minutes + seconds)
+}
+
+func parseDurationPart(value string, unit time.Duration) time.Duration {
+	if len(value) != 0 {
+		if parsed, err := strconv.ParseFloat(value[:len(value)-1], 64); err == nil {
+			return time.Duration(float64(unit) * parsed)
+		}
+	}
+	return 0
+}
+
+func executeProxyCommand(ctx context.Context, proxy_command types.List, proxy_sleep types.String) (*exec.Cmd, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	var args []string
+	var sleep_duration time.Duration
 
 	// This is fine, we don't need a proxy command
 	if proxy_command.Null {
@@ -26,6 +53,12 @@ func executeProxyCommand(ctx context.Context, proxy_command types.List) (*exec.C
 	diags.Append(proxy_command.ElementsAs(ctx, &args, false)...)
 	if diags.HasError() {
 		return nil, diags
+	}
+
+	if !proxy_sleep.Null {
+		sleep_duration = parseDuration(proxy_sleep.Value)
+	} else {
+		sleep_duration = 5 * time.Second
 	}
 
 	proc := exec.CommandContext(ctx, args[0], args[1:]...)
@@ -42,7 +75,7 @@ func executeProxyCommand(ctx context.Context, proxy_command types.List) (*exec.C
 	}
 
 	// Wait a bit for the proxy to come alive
-	time.Sleep(time.Second * 5)
+	time.Sleep(sleep_duration)
 
 	return proc, diags
 
@@ -50,8 +83,9 @@ func executeProxyCommand(ctx context.Context, proxy_command types.List) (*exec.C
 
 func doReadState(
 	ctx context.Context,
-	p provider,
+	p alembicProvider,
 	proxy_command types.List,
+	proxy_sleep types.String,
 	alembic_command types.List,
 	extra_values types.Map,
 	environment_values types.Map,
@@ -64,7 +98,7 @@ func doReadState(
 	var upgraded_revision string
 	var real_head string
 
-	proxy, result_diags := executeProxyCommand(ctx, proxy_command)
+	proxy, result_diags := executeProxyCommand(ctx, proxy_command, proxy_sleep)
 	diags.Append(result_diags...)
 	if diags.HasError() {
 		return "", "", diags
@@ -123,16 +157,24 @@ func doReadState(
 		}
 
 		// The first line of the output shoud loook like "Rev: 774ddff6187f (head)"
-		exp, err := regexp.Compile(`(?m)^Rev: ([a-f0-9]+) \(` + regexp.QuoteMeta(revision) + `\)$`)
+		expression := `(?m)^Rev: ([a-f0-9]+) \(` + regexp.QuoteMeta(revision) + `\)$`
+		exp, err := regexp.Compile(expression)
 		if err != nil {
-			diags.AddError("failed to compile revision expression", err.Error())
+			diags.AddError(fmt.Sprintf("failed to compile revision expression: '%v'", expression), err.Error())
 			return "", "", diags
 		}
 
 		// Find the matching sub expressions
 		matches := exp.FindStringSubmatch(stdout.String())
 		if matches == nil || matches[1] == "" {
-			diags.AddError("failed parsing alembic show results", "The regular expression did not match. Did Alembic change output formats? D:")
+			diags.AddError(
+				"failed parsing alembic show results",
+				fmt.Sprintf(
+					"The regular expression '%v' did not match. If Alembic changes output formats, please submit an\nissue at https://github.com/calebstewart/terraform-provider-alembic.\n\nStandard Output:\n%v\n",
+					expression,
+					stdout.String(),
+				),
+			)
 			return "", "", diags
 		}
 
@@ -149,7 +191,7 @@ func doReadState(
 
 func buildUpgradeOrDowngradeCommand(
 	ctx context.Context,
-	p provider,
+	p alembicProvider,
 	alembic_command types.List,
 	extra_values types.Map,
 	environment_values types.Map,
@@ -171,7 +213,7 @@ func buildUpgradeOrDowngradeCommand(
 
 func buildAlembicCommand(
 	ctx context.Context,
-	p provider,
+	p alembicProvider,
 	alembic_command types.List,
 	extra_values types.Map,
 	environment_values types.Map,

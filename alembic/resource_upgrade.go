@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -48,6 +51,14 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 				Description: "An argument list used to execute a proxy which allows direct communication with the database (e.g. cloud-sql-proxy)",
 				Optional:    true,
 			},
+			"proxy_sleep": {
+				Type:        types.StringType,
+				Description: "Amount of time to sleep in order to allow the proxy to startup. Format is '[0-9]+(s|m|h|d|M|Y)' (default: '5s')",
+				Optional:    true,
+				Validators: []tfsdk.AttributeValidator{
+					stringvalidator.RegexMatches(durationRegex, "proxy_sleep must be in the format '[0-9]+(s|m|h|d|M|Y)'"),
+				},
+			},
 			"extra": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Description: "Additional arguments consumed by custom env.py scripts",
@@ -57,20 +68,21 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 	}, nil
 }
 
-func (r resourceUpgradeType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+func (r resourceUpgradeType) NewResource(_ context.Context, p provider.Provider) (resource.Resource, diag.Diagnostics) {
 	return resourceUpgrade{
-		p: *(p.(*provider)),
+		p: *(p.(*alembicProvider)),
 	}, nil
 }
 
 type resourceUpgrade struct {
-	p provider
+	p alembicProvider
 }
 
 type resourceUpgradeData struct {
 	Environment      types.Map    `tfsdk:"environment"`
 	Alembic          types.List   `tfsdk:"alembic"`
 	ProxyCommand     types.List   `tfsdk:"proxy_command"`
+	ProxySleep       types.String `tfsdk:"proxy_sleep"`
 	UpgradedRevision types.String `tfsdk:"upgraded_revision"`
 	Revision         string       `tfsdk:"revision"`
 	Extra            types.Map    `tfsdk:"extra"`
@@ -78,7 +90,7 @@ type resourceUpgradeData struct {
 }
 
 // Create a new resource
-func (r resourceUpgrade) Create(ctx context.Context, req tfsdk.CreateResourceRequest, resp *tfsdk.CreateResourceResponse) {
+func (r resourceUpgrade) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 
 	var plan resourceUpgradeData
 
@@ -89,7 +101,7 @@ func (r resourceUpgrade) Create(ctx context.Context, req tfsdk.CreateResourceReq
 		return
 	}
 
-	proxy, diags := executeProxyCommand(ctx, plan.ProxyCommand)
+	proxy, diags := executeProxyCommand(ctx, plan.ProxyCommand, plan.ProxySleep)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -110,7 +122,7 @@ func (r resourceUpgrade) Create(ctx context.Context, req tfsdk.CreateResourceReq
 }
 
 // Update resource
-func (r resourceUpgrade) Update(ctx context.Context, req tfsdk.UpdateResourceRequest, resp *tfsdk.UpdateResourceResponse) {
+func (r resourceUpgrade) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan resourceUpgradeData
 
 	// Retrieve the plan arguments
@@ -120,7 +132,7 @@ func (r resourceUpgrade) Update(ctx context.Context, req tfsdk.UpdateResourceReq
 		return
 	}
 
-	proxy, diags := executeProxyCommand(ctx, plan.ProxyCommand)
+	proxy, diags := executeProxyCommand(ctx, plan.ProxyCommand, plan.ProxySleep)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -140,7 +152,7 @@ func (r resourceUpgrade) Update(ctx context.Context, req tfsdk.UpdateResourceReq
 	return
 }
 
-func (r resourceUpgrade) Read(ctx context.Context, req tfsdk.ReadResourceRequest, resp *tfsdk.ReadResourceResponse) {
+func (r resourceUpgrade) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 
 	var plan resourceUpgradeData
 
@@ -151,7 +163,7 @@ func (r resourceUpgrade) Read(ctx context.Context, req tfsdk.ReadResourceRequest
 		return
 	}
 
-	upgraded_rev, real_head, diags := doReadState(ctx, r.p, plan.ProxyCommand, plan.Alembic, plan.Extra, plan.Environment, plan.Revision)
+	upgraded_rev, real_head, diags := doReadState(ctx, r.p, plan.ProxyCommand, plan.ProxySleep, plan.Alembic, plan.Extra, plan.Environment, plan.Revision)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -171,14 +183,14 @@ func (r resourceUpgrade) Read(ctx context.Context, req tfsdk.ReadResourceRequest
 }
 
 // Delete resource
-func (r resourceUpgrade) Delete(ctx context.Context, req tfsdk.DeleteResourceRequest, resp *tfsdk.DeleteResourceResponse) {
+func (r resourceUpgrade) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	resp.Diagnostics.AddWarning("unable to delete alembic versions", "delete makes no sense for database migrations")
 }
 
 // Import resource
-func (r resourceUpgrade) ImportState(ctx context.Context, req tfsdk.ImportResourceStateRequest, resp *tfsdk.ImportResourceStateResponse) {
+func (r resourceUpgrade) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	// Save the import identifier in the id attribute
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // For alembic migrations, upgrade and create look the same, so we abstract that here.
