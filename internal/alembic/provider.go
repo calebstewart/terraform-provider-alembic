@@ -11,19 +11,34 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-var stderr = os.Stderr
-
-func New() provider.Provider {
-	return &alembicProvider{}
-}
+// Ensure provider defined types fully satisfy framework interfaces
+var _ provider.Provider = &alembicProvider{}
 
 type alembicProvider struct {
 	configured   bool
+	version      string
 	project_root string
 	alembic      []string
 	config       string
 	section      string
 	extra        map[string]string
+}
+
+// Provider schema struct
+type providerData struct {
+	ProjectRoot types.String `tfsdk:"project_root"`
+	Alembic     types.List   `tfsdk:"alembic"`
+	Config      types.String `tfsdk:"config"`
+	Section     types.String `tfsdk:"section"`
+	Extra       types.Map    `tfsdk:"extra"`
+}
+
+func New(version string) func() provider.Provider {
+	return func() provider.Provider {
+		return &alembicProvider{
+			version: version,
+		}
+	}
 }
 
 // GetSchema
@@ -57,15 +72,6 @@ func (p *alembicProvider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagn
 			},
 		},
 	}, nil
-}
-
-// Provider schema struct
-type providerData struct {
-	ProjectRoot types.String `tfsdk:"project_root"`
-	Alembic     types.List   `tfsdk:"alembic"`
-	Config      types.String `tfsdk:"config"`
-	Section     types.String `tfsdk:"section"`
-	Extra       types.Map    `tfsdk:"extra"`
 }
 
 func (p *alembicProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {

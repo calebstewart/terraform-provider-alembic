@@ -6,38 +6,55 @@ scripts to do this, but that has the downside of invoking the script on state
 updates, which is not ideal for things like Alembic which may modify the
 databae.
 
-I hope to support downgrade and stamp resources eventually, but for now I am
-focusing on getting the `alembic_upgrade` resource right.
+## Requirements
 
-## Build provider
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.0
+- [Go](https://golang.org/doc/install) >= 1.18
 
-Run the following command to build the provider
+## Building The Provider
+
+1. Clone the repository
+1. Enter the repository directory
+1. Build the provider using the Go `install` command:
 
 ```shell
-$ go build -o terraform-provider-alembic
+go install
 ```
 
-## Test sample configuration
+## Adding Dependencies
 
-First, build and install the provider.
+This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
+Please see the Go documentation for the most up to date information about using Go modules.
+
+To add a new dependency `github.com/author/dependency` to your Terraform provider:
 
 ```shell
-$ make install
+go get github.com/author/dependency
+go mod tidy
 ```
 
-Then, navigate to the `examples` directory. 
+Then commit the changes to `go.mod` and `go.sum`.
+
+## Using the provider
+
+See the generated documentation for usage examples. You will need a project
+using SQLAlchemy and Alembic as well as a database instance which is accessible
+from the host running terraform (optionally through a proxy of some sort).
+
+## Developing the Provider
+
+If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
+
+To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
+
+To generate or update documentation, run `go generate`.
+
+In order to run the full suite of Acceptance tests, run `make testacc`.
+
+*Note:* Acceptance tests create real resources, and often cost money to run.
 
 ```shell
-$ cd examples
-```
-
-You will need to add relevant provider configurations to `main.tf` to tell
-the provider where your Alembic configuration is located and how to execute
-Alembic. Then, run the following command to initialize the workspace and
-apply the sample configuration.
-
-```shell
-$ terraform init && terraform apply
+make testacc
 ```
 
 ## Note on Proxy Commands
