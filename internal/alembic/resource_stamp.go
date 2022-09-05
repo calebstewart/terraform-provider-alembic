@@ -19,6 +19,8 @@ type resourceStampType struct{}
 
 func (r resourceStampType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		Version:     2,
+		Description: "Stamp a database with the given revision ID or current 'head'",
 		Attributes: map[string]tfsdk.Attribute{
 			"revision": {
 				Type:        types.StringType,

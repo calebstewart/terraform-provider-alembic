@@ -19,6 +19,8 @@ type resourceUpgradeType struct{}
 
 func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		Version:     2,
+		Description: "Upgrade a database to the specified revision ID or 'head'",
 		Attributes: map[string]tfsdk.Attribute{
 			"revision": {
 				Type:        types.StringType,
