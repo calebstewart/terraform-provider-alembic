@@ -1,4 +1,4 @@
-module terraform-provider-alembic
+module github.com/calebstewart/terraform-provider-alembic
 
 go 1.16
 

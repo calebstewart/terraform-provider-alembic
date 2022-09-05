@@ -1,16 +1,17 @@
 ---
-page_title: "upgrade Resource - terraform-provider-alembic"
+page_title: "stamp Resource - terraform-provider-alembic"
 subcategory: ""
 description: |-
-  The upgrade resource allows you to apply Alembic upgrades to a specific revision at deployment time. 
+  The stamp resource allows you to stamp a database with a specified revision ID without performing
+  any direct upgrades.
 ---
 
 # Resource `alembic_upgrade`
 
-The upgrade resource allows you to apply Alembic upgrades to your database during
-infrastructure deployment. If environment variables are passed, they are marked
-as sensitive, since they likely contain database credentials or configuration
-collected from infrastructure deployment.
+The stamp resource allows you to stamp a database with a specified revision ID
+during infrastructure deployment. If environment variables are passed, they are
+marked as sensitive, since they likely contain database credentials or
+configuration collected from infrastructure deployment.
 
 **Note**: Extra arguments specified at the provider level are always passed in
 addition to any extra arguments specified here at the resource level.

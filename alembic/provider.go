@@ -20,6 +20,9 @@ type provider struct {
 	configured   bool
 	project_root string
 	alembic      []string
+	config       string
+	section      string
+	extra        map[string]string
 }
 
 // GetSchema
@@ -36,6 +39,21 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 				Description: "An argument list which is used as the Alembic command line (default: ['alembic'])",
 				Optional:    true,
 			},
+			"config": {
+				Type:        types.StringType,
+				Description: "Name of the alembic configuration file (default: 'alembic.ini')",
+				Optional:    true,
+			},
+			"section": {
+				Type:        types.StringType,
+				Description: "The section within the configuration file to use for Alembic config (default: 'alembic')",
+				Optional:    true,
+			},
+			"extra": {
+				Type:        types.MapType{ElemType: types.StringType},
+				Description: "Additional arguments consumed by custom env.py scripts",
+				Optional:    true,
+			},
 		},
 	}, nil
 }
@@ -44,6 +62,9 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 type providerData struct {
 	ProjectRoot types.String `tfsdk:"project_root"`
 	Alembic     types.List   `tfsdk:"alembic"`
+	Config      types.String `tfsdk:"config"`
+	Section     types.String `tfsdk:"section"`
+	Extra       types.Map    `tfsdk:"extra"`
 }
 
 func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
@@ -55,6 +76,18 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 
+	if !config.Config.Null {
+		p.config = config.Config.Value
+	} else {
+		p.config = "alembic.ini"
+	}
+
+	if !config.Section.Null {
+		p.section = config.Section.Value
+	} else {
+		p.section = "alembic"
+	}
+
 	// Ensure the given file path is a directory
 	if pathinfo, err := os.Stat(config.ProjectRoot.Value); os.IsNotExist(err) || !pathinfo.IsDir() {
 		resp.Diagnostics.AddError("project_root must be an valid directory path", err.Error())
@@ -62,7 +95,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	}
 
 	// Ensure that the alembic configuration exists
-	if pathinfo, err := os.Stat(filepath.Join(config.ProjectRoot.Value, "alembic.ini")); os.IsNotExist(err) || pathinfo.IsDir() {
+	if pathinfo, err := os.Stat(filepath.Join(config.ProjectRoot.Value, p.config)); os.IsNotExist(err) || pathinfo.IsDir() {
 		resp.Diagnostics.AddError("project_root must contain an alembic.ini configuration", err.Error())
 		return
 	}
@@ -77,6 +110,15 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		p.alembic = []string{"alembic"}
 	}
 
+	if !config.Extra.Null {
+		resp.Diagnostics.Append(config.Extra.ElementsAs(ctx, &p.extra, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	} else {
+		p.extra = nil
+	}
+
 	p.configured = true
 }
 
@@ -84,8 +126,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"alembic_upgrade": resourceUpgradeType{},
-		// "alembic_downgrade": resourceDowngradeType{},
-		// "alembic_stamp":     resourceStampType{},
+		"alembic_stamp":   resourceStampType{},
 	}, nil
 }
 
