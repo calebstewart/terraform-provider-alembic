@@ -51,10 +51,15 @@ signs:
       - "--detach-sign"
       - "${artifact}"
 release:
+  header: |
+    ## Release {{.Tag}} ({{ .Date }})
+  footer: |
+    [Full Changelog](https://github.com/calebstewart/terraform-provider-alembic/blob/{{ .Tag }}/CHANGELOG.md)
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
   # If you want to manually examine the release before its live, uncomment this line:
   # draft: true
 changelog:
-  skip: true
+  skip: false
+  use: github
