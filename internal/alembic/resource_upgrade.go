@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -22,7 +23,7 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 		Version:     2,
 		Description: "Upgrade a database to the specified revision ID or 'head'",
 		Attributes: map[string]tfsdk.Attribute{
-			"revision": {
+			"target": {
 				Type:        types.StringType,
 				Description: "Revision identifier. The target revision to which we will upgrade.",
 				Required:    true,
@@ -43,7 +44,7 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 				Description: "Command used to execute alembic. By default, this is taken from the provider configuration.",
 				Optional:    true,
 			},
-			"upgraded_revision": {
+			"revision": {
 				Type:        types.StringType,
 				Description: "The resulting revision after applying the upgrade.",
 				Computed:    true,
@@ -66,6 +67,11 @@ func (r resourceUpgradeType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 				Description: "Additional arguments consumed by custom env.py scripts",
 				Optional:    true,
 			},
+			"id": {
+				Type:        types.StringType,
+				Description: "A unique ID for this resource used internally by terraform. Not intended for external use.",
+				Computed:    true,
+			},
 		},
 	}, nil
 }
@@ -81,14 +87,15 @@ type resourceUpgrade struct {
 }
 
 type resourceUpgradeData struct {
-	Environment      types.Map    `tfsdk:"environment"`
-	Alembic          types.List   `tfsdk:"alembic"`
-	ProxyCommand     types.List   `tfsdk:"proxy_command"`
-	ProxySleep       types.String `tfsdk:"proxy_sleep"`
-	UpgradedRevision types.String `tfsdk:"upgraded_revision"`
-	Revision         string       `tfsdk:"revision"`
-	Extra            types.Map    `tfsdk:"extra"`
-	Tag              types.String `tfsdk:"tag"`
+	Environment  types.Map    `tfsdk:"environment"`
+	Alembic      types.List   `tfsdk:"alembic"`
+	ProxyCommand types.List   `tfsdk:"proxy_command"`
+	ProxySleep   types.String `tfsdk:"proxy_sleep"`
+	Revision     types.String `tfsdk:"revision"`
+	Target       string       `tfsdk:"target"`
+	Extra        types.Map    `tfsdk:"extra"`
+	Tag          types.String `tfsdk:"tag"`
+	ID           types.String `tfsdk:"id"`
 }
 
 // Create a new resource
@@ -115,6 +122,10 @@ func (r resourceUpgrade) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// Generate a random resource ID
+	plan.ID.Value = uuid.New().String()
+	plan.ID.Unknown = false
 
 	// Store our updated resourceUpgradeData in the state
 	diags = resp.State.Set(ctx, &plan)
@@ -165,18 +176,18 @@ func (r resourceUpgrade) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	upgraded_rev, real_head, diags := doReadState(ctx, r.p, plan.ProxyCommand, plan.ProxySleep, plan.Alembic, plan.Extra, plan.Environment, plan.Revision)
+	upgraded_rev, real_head, diags := doReadState(ctx, r.p, plan.ProxyCommand, plan.ProxySleep, plan.Alembic, plan.Extra, plan.Environment, plan.Target)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	// Store the resulting revision ID
-	plan.UpgradedRevision.Value = upgraded_rev
-	plan.UpgradedRevision.Unknown = false
+	plan.Revision.Value = upgraded_rev
+	plan.Revision.Unknown = false
 
 	if real_head != upgraded_rev {
-		plan.Revision = real_head
+		plan.Target = real_head
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -205,7 +216,7 @@ func (r resourceUpgrade) doCreateOrUpgrade(ctx context.Context, plan *resourceUp
 	var stdout bytes.Buffer
 
 	// Build the base alembic command
-	proc, diags := buildUpgradeOrDowngradeCommand(ctx, r.p, plan.Alembic, plan.Extra, plan.Environment, plan.Tag, plan.Revision, "upgrade")
+	proc, diags := buildUpgradeOrDowngradeCommand(ctx, r.p, plan.Alembic, plan.Extra, plan.Environment, plan.Tag, plan.Target, "upgrade")
 	result.Append(diags...)
 	if result.HasError() {
 		return result
@@ -250,8 +261,8 @@ func (r resourceUpgrade) doCreateOrUpgrade(ctx context.Context, plan *resourceUp
 	}
 
 	// Store the resulting revision ID
-	plan.UpgradedRevision.Value = strings.Split(strings.Trim(stdout.String(), "\n\r"), " ")[0]
-	plan.UpgradedRevision.Unknown = false
+	plan.Revision.Value = strings.Split(strings.Trim(stdout.String(), "\n\r"), " ")[0]
+	plan.Revision.Unknown = false
 
 	return result
 }

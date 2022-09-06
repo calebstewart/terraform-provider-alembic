@@ -48,7 +48,7 @@ resource "alembic_stamp" "db-stamp" {
 
 ### Required
 
-- `revision` (String) Revision identifier. The target revision to which we will upgrade.
+- `target` (String) Revision identifier. The target revision which we will stamp on the database.
 
 ### Optional
 
@@ -61,7 +61,8 @@ resource "alembic_stamp" "db-stamp" {
 
 ### Read-Only
 
-- `upgraded_revision` (String) The resulting revision after applying the upgrade.
+- `id` (String) A unique ID for this resource used internally by terraform. Not intended for external use.
+- `revision` (String) The resulting revision after applying the upgrade.
 
 ## Note on Proxy Commands
 

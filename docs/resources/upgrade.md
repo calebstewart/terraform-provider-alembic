@@ -47,7 +47,7 @@ resource "alembic_upgrade" "db-upgrade" {
 
 ### Required
 
-- `revision` (String) Revision identifier. The target revision to which we will upgrade.
+- `target` (String) Revision identifier. The target revision to which we will upgrade.
 
 ### Optional
 
@@ -60,7 +60,8 @@ resource "alembic_upgrade" "db-upgrade" {
 
 ### Read-Only
 
-- `upgraded_revision` (String) The resulting revision after applying the upgrade.
+- `id` (String) A unique ID for this resource used internally by terraform. Not intended for external use.
+- `revision` (String) The resulting revision after applying the upgrade.
 
 ## Note on Proxy Commands
 
