@@ -197,7 +197,9 @@ func (r resourceUpgrade) Read(ctx context.Context, req resource.ReadRequest, res
 
 // Delete resource
 func (r resourceUpgrade) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	resp.Diagnostics.AddWarning("unable to delete alembic versions", "delete makes no sense for database migrations")
+	// NOTE: Deletion doesn't make a lot of sense. If the intent is to roll back versions, then how far back?
+	//       Because applying versions should be easy and non-destructive, this is simply a noop.
+	// resp.Diagnostics.AddWarning("unable to delete alembic versions", "delete makes no sense for database migrations")
 }
 
 // Import resource

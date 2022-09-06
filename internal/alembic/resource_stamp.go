@@ -125,6 +125,7 @@ func (r resourceStamp) Create(ctx context.Context, req resource.CreateRequest, r
 
 	// Generate a random resource ID
 	plan.ID.Value = uuid.New().String()
+	plan.ID.Unknown = false
 
 	// Store our updated resourceStampData in the state
 	diags = resp.State.Set(ctx, &plan)
@@ -196,7 +197,9 @@ func (r resourceStamp) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 // Delete resource
 func (r resourceStamp) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	resp.Diagnostics.AddWarning("unable to delete alembic versions", "delete makes no sense for database migrations")
+	// NOTE: Deletion doesn't make a lot of sense. If the intent is to roll back versions, then how far back?
+	//       Because applying versions should be easy and non-destructive, this is simply a noop.
+	// resp.Diagnostics.AddWarning("unable to delete alembic versions", "delete makes no sense for database migrations")
 }
 
 // Import resource

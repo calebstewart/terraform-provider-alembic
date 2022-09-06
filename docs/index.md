@@ -2,10 +2,12 @@
 page_title: "Provider: terraform-provider-alembic"
 subcategory: ""
 description: |-
-  Alembic database migration resource provider
+  Alembic database migration integration for Terraform.
 ---
 
 # terraform-provider-alembic Provider
+
+Alembic database migration integration for Terraform.
 
 ## Example Usage
 

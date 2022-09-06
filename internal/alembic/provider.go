@@ -44,6 +44,7 @@ func New(version string) func() provider.Provider {
 // GetSchema
 func (p *alembicProvider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		Description: "Alembic database migration integration for Terraform.",
 		Attributes: map[string]tfsdk.Attribute{
 			"project_root": {
 				Type:        types.StringType,

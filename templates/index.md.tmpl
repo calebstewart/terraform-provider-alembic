@@ -2,10 +2,12 @@
 page_title: "Provider: {{.ProviderName}}"
 subcategory: ""
 description: |-
-  Alembic database migration resource provider
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
 ---
 
 # {{.ProviderName}} Provider
+
+{{ .Description | trimspace }}
 
 ## Example Usage
 

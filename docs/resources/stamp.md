@@ -64,6 +64,18 @@ resource "alembic_stamp" "db-stamp" {
 - `id` (String) A unique ID for this resource used internally by terraform. Not intended for external use.
 - `revision` (String) The resulting revision after applying the upgrade.
 
+## Note on Resource Deletion
+
+The concept of deleting an Alembic upgrade/stamp operation does not make
+much sense. If the expectation were to remove all Alembic revisions, that
+would be the equivalent of rebuilding the database. In that case, you
+should instead taint the database resource itself to trigger recreation.
+
+Both the `alembic_upgrade` and `alembic_stamp` resources have NOOPs
+implemented for their deletion routines. However, because Alembic is
+stateful and can recognize when a revision is already applied, this
+should not affect recreation.
+
 ## Note on Proxy Commands
 
 Both the `alembic_upgrade` and `alembic_stamp` resources provide an optional
