@@ -14,8 +14,8 @@ Upgrade a database to the specified revision ID or 'head'
 ```terraform
 # Upgrade a database
 resource "alembic_upgrade" "db-upgrade" {
-  revision = "head"          // The revision ID or special "head" value
-  tag      = "my-custom-tag" // Custom tag passed with the --tag option
+  target = "head"          // The revision ID or special "head" value
+  tag    = "my-custom-tag" // Custom tag passed with the --tag option
 
   // Environment variables passed to the alembic command
   environment = {

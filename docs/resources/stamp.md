@@ -15,8 +15,8 @@ Stamp a database with the given revision ID or current 'head'
 # Stamp a database; this does not perform and upgrade and only
 # marks the database as if it had been upgrade (see 'alembic stamp --help')
 resource "alembic_stamp" "db-stamp" {
-  revision = "head"          // The revision ID or special "head" value
-  tag      = "my-custom-tag" // Custom tag passed with the --tag option
+  target = "head"          // The target revision ID or special "head" value
+  tag    = "my-custom-tag" // Custom tag passed with the --tag option
 
   // Environment variables passed to the alembic command
   environment = {
