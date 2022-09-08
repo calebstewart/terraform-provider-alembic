@@ -158,6 +158,10 @@ func (r resourceStamp) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	// Generate a random resource ID
+	plan.ID.Value = uuid.New().String()
+	plan.ID.Unknown = false
+
 	// Store our updated resourceStampData in the state
 	diags = resp.State.Set(ctx, &plan)
 	resp.Diagnostics.Append(diags...)

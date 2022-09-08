@@ -158,6 +158,10 @@ func (r resourceUpgrade) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
+  // Generate a random resource ID
+	plan.ID.Value = uuid.New().String()
+	plan.ID.Unknown = false
+
 	// Store our updated resourceUpgradeData in the state
 	diags = resp.State.Set(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
